@@ -1,90 +1,40 @@
-# config.py (完整修复版本)
-import os
-from pathlib import Path
+# -*- coding: utf-8 -*-
+# @Author : Chris
+# @Desc   : 圣通教育爬虫 全局配置文件
+# @Date   : 2026
 
+# ===================== 基础配置 =====================
+# 登录相关
+USER_PHONE = ""
+CAMPUS_ID = ""
+LOGIN_URL = "https://shentongedu.com/omo/login"
 
-class Config:
-    # API配置
-    BASE_API_URL = "https://api-manage2.shengtongedu.cn/st-course-server"
+# 分页配置
+PAGE_SIZE = 96  # 每页条数 规避翻页
 
-    # 接口路径
-    COURSE_LIST_URL = f"{BASE_API_URL}/manage/course/coursePageListV6"
-    UNIT_LIST_URL = f"{BASE_API_URL}/manage/course/unit/courseUnitList"
-    SESSION_LIST_URL = f"{BASE_API_URL}/manage/course/sesson/selectByCourseUnits"
+# 路径配置
+LOG_DIR = "./logs"
+DOWNLOAD_DIR = "./shentong_download_resources"
 
-    # 页面URL
-    LOGIN_URL = "https://manage.shengtongedu.cn/curriculum/#/curriculum/courseManage"
-    COURSE_MANAGE_URL = "https://manage.shengtongedu.cn/curriculum/#/curriculum/courseManage"
+# 日志配置
+LOG_LEVEL = "INFO"
+LOG_FILE = "shentong_spider.log"
 
-    # 用户配置（可改为从环境变量或配置文件读取）
-    PHONE_NUMBER = "18795960907"
-    CAMPUS_ID = "4104"
-    CAMPUS_ID_LIST = ["4104"]
+# 浏览器配置
+IMPLICITLY_WAIT_TIME = 10
+PAGE_LOAD_TIMEOUT = 20
+SCRIPT_TIMEOUT = 15
 
-    # 下载配置
-    DOWNLOAD_BASE_DIR = Path("downloads")
-    PAGE_SIZE = 12
-    REQUEST_TIMEOUT = 30
+# ===================== 新增：资源Tab过滤核心配置【本次改动】 =====================
+# 白名单关键词：包含这些词的Tab才判定为资源类Tab，会点击探索
+RESOURCE_TAB_WHITE_KEYWORDS = ["资源", "资料", "课件", "附件", "课前", "课中", "课后", "学习", "讲义", "素材"]
+# 黑名单关键词：包含这些词的Tab一律判定为非资源类，强制跳过永不点击
+RESOURCE_TAB_BLACK_KEYWORDS = ["学员", "考勤", "作业", "批改", "统计", "班级", "评价", "数据", "设置", "管理", "报表", "分析", "考核", "签到"]
+# 核心页面结构校验xpath - 你的课时树形结构节点，不变则页面结构安全
+VALIDATE_CORE_STRUCTURE_XPATH = "//div[contains(@class,'el-tree') or contains(@class,'lesson-tree')]"
 
-    # 浏览器配置
-    USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
-    VIEWPORT_SIZE = {"width": 1920, "height": 1080}
-
-    # 文件路径
-    COURSES_DATA_FILE = Path("courses_data.json")
-    LESSONS_INFO_FILE = Path("lessons_info.json")
-
-    # 时间配置（秒）
-    PAGE_LOAD_WAIT = 5
-    CLICK_WAIT = 2
-    API_REQUEST_DELAY = 1.5
-
-    # 文件类型映射（新增）
-    FILE_TYPE_EXTENSIONS = {
-        "pdf": ".pdf",
-        "ppt": ".ppt",
-        "pptx": ".pptx",
-        "word": ".docx",
-        "excel": ".xlsx",
-        "zip": ".zip",
-        "video": ".mp4",
-        "audio": ".mp3",
-        "image": ".jpg",
-        "sb3": ".sb3",
-        "unknown": ".dat"
-    }
-
-    # 下载配置（通过类方法获取，避免循环引用）
-    @classmethod
-    def get_download_config(cls):
-        """获取下载配置"""
-        return {
-            "max_concurrent": 3,           # 最大并发下载数
-            "download_timeout": 300,       # 下载超时时间（秒）
-            "max_retries": 3,             # 最大重试次数
-            "chunk_size": 8192,           # 下载块大小
-            "user_agent": cls.USER_AGENT,  # 正确引用类属性
-        }
-
-    @classmethod
-    def get_api_headers(cls, token):
-        """获取API请求的标准headers"""
-        return {
-            "accept": "application/json, text/plain, */*",
-            "accept-language": "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7",
-            "campusid": cls.CAMPUS_ID,
-            "content-type": "application/json; charset=UTF-8",
-            "logincode": cls.PHONE_NUMBER,
-            "origin": "https://manage.shengtongedu.cn",
-            "platform": "OMO_WEB",
-            "priority": "u=1, i",
-            "referer": "https://manage.shengtongedu.cn/",
-            "sec-ch-ua": '"Google Chrome";v="143", "Chromium";v="143", "Not A(Brand";v="24"',
-            "sec-ch-ua-mobile": "?0",
-            "sec-ch-ua-platform": '"Windows"',
-            "sec-fetch-dest": "empty",
-            "sec-fetch-mode": "cors",
-            "sec-fetch-site": "same-site",
-            "token": token,
-            "user-agent": cls.USER_AGENT,
-        }
+# ===================== 下载模块配置 =====================
+MAX_CONCURRENT = 3
+RETRY_TIMES = 3
+RETRY_DELAY = 2
+SUPPORT_FILE_TYPES = ["pdf", "ppt", "pptx", "doc", "docx", "xls", "xlsx", "mp4", "mp3", "jpg", "png", "zip", "rar"]

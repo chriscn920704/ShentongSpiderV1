@@ -1,166 +1,108 @@
-# main.py
-import time
-import signal
-from pathlib import Path
-from typing import Optional
-from config import Config
-from logger import logger
-from utils import FileUtils, UserInputUtils
+# -*- coding: utf-8 -*-
+# @Author : Chris
+# @Desc   : 圣通教育资源爬虫 - 主程序入口/核心流程控制
+# @Date   : 2026
+import os
+import sys
 from browser_manager import BrowserManager
-from lesson_processor import LessonProcessor, get_all_lessons_info
+from lesson_processor import LessonProcessor
+from collect_courses import CourseCollector
+from utils import init_logger, check_dir
+from logger import logger
+from config import LOG_DIR, DOWNLOAD_DIR
 
 
-def signal_handler(sig, frame):
-    """处理中断信号"""
-    logger.warning("程序被用户中断，正在优雅退出...")
-    exit(0)
+class ShentongSpider:
+    def __init__(self):
+        # 初始化目录
+        check_dir(LOG_DIR)
+        check_dir(DOWNLOAD_DIR)
+        # 初始化日志
+        init_logger()
+        # 初始化核心模块
+        self.browser = BrowserManager()
+        self.course_collector = CourseCollector(self.browser.driver)
+        self.lesson_processor = LessonProcessor(self.browser.driver)
+        self.is_login = False
 
+    def run(self):
+        """爬虫主运行流程"""
+        try:
+            logger.info("=" * 50)
+            logger.info("🚀 圣通教育资源爬虫V1.0 启动成功")
+            logger.info("=" * 50)
 
-def load_course_data() -> Optional[list]:
-    """从本地文件加载课程数据"""
-    logger.progress("从本地文件加载课程数据...")
-
-    if not Config.COURSES_DATA_FILE.exists():
-        logger.error(f"课程数据文件不存在: {Config.COURSES_DATA_FILE}")
-        logger.info("请先运行课程数据收集脚本或确保文件存在")
-        return None
-
-    courses_data = FileUtils.load_json(Config.COURSES_DATA_FILE)
-    if not courses_data:
-        logger.error("加载课程数据失败")
-        return None
-
-    logger.success(f"成功加载 {len(courses_data)} 门课程")
-    return courses_data
-
-
-def save_lessons_info(lessons_info: list):
-    """保存课时信息到文件"""
-    if FileUtils.save_json(lessons_info, Config.LESSONS_INFO_FILE):
-        logger.success(f"课时信息已保存到: {Config.LESSONS_INFO_FILE}")
-    else:
-        logger.error("保存课时信息失败")
-
-
-def main():
-    """主函数"""
-    # 设置信号处理器
-    signal.signal(signal.SIGINT, signal_handler)
-
-    logger.separator("圣通教育资源下载工具")
-
-    try:
-        # 1. 从本地文件加载课程数据
-        courses_data = load_course_data()
-        if not courses_data:
-            return
-
-        # 2. 用户选择课程
-        selected_course = UserInputUtils.select_course(courses_data)
-        if not selected_course:
-            return
-        # 3. 启动浏览器并登录
-        with BrowserManager(headless=False) as browser:
-            if not browser.login():
-                logger.error("登录失败，程序退出")
+            # 1. 自动化登录
+            self.is_login = self.browser.login()
+            if not self.is_login:
+                logger.error("❌ 登录失败，程序终止")
                 return
 
-            if not browser.navigate_to_course_management():
-                logger.error("导航到课程管理页面失败，程序退出")
+            # 2. 获取所有课程列表
+            course_list = self.course_collector.collect_all_courses()
+            if not course_list:
+                logger.error("❌ 未采集到课程数据，程序终止")
                 return
 
-            # 4. 从本地加载课程数据并选择课程（浏览器已打开）
-            courses_data = load_course_data()
-            if not courses_data:
+            # 3. 课程选择交互
+            logger.info("\n📚 已采集到的课程列表:")
+            for idx, course in enumerate(course_list):
+                logger.info(f"[{idx + 1}] {course}")
+
+            course_choice = int(input("请选择课程序号: ")) - 1
+            if course_choice < 0 or course_choice >= len(course_list):
+                logger.error("❌ 课程选择无效")
+                return
+            selected_course = course_list[course_choice]
+            self.lesson_processor.course_name = selected_course
+            logger.info(f"✅ 已选择课程: {selected_course}")
+
+            # 4. 进入课程详情 & 获取课时列表
+            self.course_collector.enter_course_detail(selected_course)
+            lesson_list = self.lesson_processor.get_lesson_list()
+            if not lesson_list:
+                logger.error("❌ 该课程无课时数据")
                 return
 
-            # ⭐⭐ 在浏览器打开的情况下选择课程 ⭐⭐
-            selected_course = UserInputUtils.select_course(courses_data)
-            if not selected_course:
-                return
+            # 5. 课时范围选择交互
+            logger.info("\n📖 该课程课时列表:")
+            for idx, lesson in enumerate(lesson_list):
+                logger.info(f"[{idx + 1}] {lesson}")
 
-            course_name = selected_course.get("courseName", "未命名课程")
-            course_code = selected_course.get("courseCode")
-
-            if not course_code:
-                logger.error("无法获取课程编码")
-                return
-
-            # 5. ⭐⭐ 关键：点击课程进入课程详情页 ⭐⭐
-            logger.progress(f"进入课程详情页: {course_name}")
-
-            # 确保在课程详情页
-            if not browser.ensure_in_course_detail_page(course_name):
-                logger.error("进入课程详情页失败，程序退出")
-                return
-
-            # 6. 获取Token（现在我们在课程详情页）
-            token = browser.get_token()
-            if not token:
-                logger.error("获取Token失败，程序退出")
-                return
-
-            # 7. 获取课程的所有课时信息（使用API）
-            logger.progress("获取课程课时信息...")
-            lessons_info = get_all_lessons_info(selected_course, token)
-            if not lessons_info:
-                logger.error("获取课时信息失败，程序退出")
-                return
-
-            # 8. 保存课时信息
-            save_lessons_info(lessons_info)
-
-            # 9. 用户选择要处理的课时
-            selected_lessons = UserInputUtils.select_lessons(lessons_info)
+            start_lesson = int(input("请选择起始课时序号: ")) - 1
+            end_lesson = int(input("请选择结束课时序号: ")) - 1
+            selected_lessons = self.lesson_processor.select_lesson_range(start_lesson, end_lesson)
             if not selected_lessons:
-                logger.info("没有选择任何课时，程序退出")
+                logger.error("❌ 课时范围选择无效")
                 return
 
-            # 10. 创建下载目录
-            download_base = Config.DOWNLOAD_BASE_DIR / course_name
-            FileUtils.ensure_directory(download_base)
+            # 6. 遍历课时 & 资源侦察
+            logger.info(f"\n🔍 开始处理 {len(selected_lessons)} 个课时的资源侦察")
+            for lesson in selected_lessons:
+                logger.info("-" * 30)
+                enter_ok = self.lesson_processor.enter_lesson_detail(lesson)
+                if not enter_ok:
+                    logger.warning(f"⚠️ 跳过课时: {lesson}")
+                    continue
 
-            # 11. 初始化课时处理器
-            processor = LessonProcessor(browser.page, download_base)
+                # ========== 这里是你调用资源探索方法的位置 ==========
+                # 你源码里的写法是调用原方法，我已在lesson_processor.py中替换为新方法
+                self.lesson_processor.explore_all_valid_resource_tabs()
 
-            # 12. 处理选中的课时
-            total_lessons = len(selected_lessons)
-            logger.separator(f"开始处理课时 ({total_lessons}个)")
+            logger.info("=" * 50)
+            logger.info("🎉 所有课时处理完成，程序运行结束")
+            logger.info("=" * 50)
 
-            for i, lesson_info in enumerate(selected_lessons, 1):
-                logger.progress(f"处理进度: {i}/{total_lessons}")
-                success = processor.process_lesson(lesson_info)
-                if not success:
-                    logger.warning(f"课时 {lesson_info['session_name']} 处理失败")
-                time.sleep(Config.CLICK_WAIT)
-
-            logger.separator("任务完成")
-            logger.success(f"资源下载任务已完成！")
-            logger.success(f"资源保存在: {download_base.absolute()}")
-
-            # 保持浏览器打开
-            logger.info("\n浏览器将保持打开状态，按回车键关闭...")
-            input()
-
-
-    except KeyboardInterrupt:
-        logger.info("用户中断程序")
-    except Exception as e:
-        logger.error(f"程序运行出错: {e}", exc_info=True)
-    finally:
-        logger.info("程序结束")
+        except KeyboardInterrupt:
+            logger.info("\nℹ️ 用户手动终止程序")
+        except Exception as e:
+            logger.error(f"❌ 程序主流程异常: {str(e)}", exc_info=True)
+        finally:
+            # 关闭浏览器
+            self.browser.quit()
+            sys.exit(0)
 
 
-if __name__ == '__main__':
-    # 检查并安装依赖
-    try:
-        import playwright
-    except ImportError:
-        logger.warning("正在安装playwright依赖...")
-        import subprocess
-        import sys
-
-        subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'playwright'])
-        subprocess.check_call([sys.executable, '-m', 'playwright', 'install'])
-
-    main()
+if __name__ == "__main__":
+    spider = ShentongSpider()
+    spider.run()
